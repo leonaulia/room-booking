@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
+import React, { useState, useEffect, useCallback } from 'react';
 import { RoomBookingCard } from './RoomBookingCard';
 import { BookingForm } from './BookingForm';
 import { CurrentBookings } from './CurrentBookings';
@@ -21,30 +20,50 @@ export function RoomBookingApp() {
   const [recentBookings, setRecentBookings] = useState<Booking[]>([]);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadBookings();
-    loadRecentBookings();
-    setSelectedSlots([]);
-  }, [selectedRoom, selectedDate]);
-
-  const loadBookings = async () => {
+  const loadBookings = useCallback(async () => {
     try {
       const roomBookings = await bookingApi.getRoomBookings(selectedRoom, selectedDate);
       setBookings(roomBookings);
       setError('');
-    } catch (err) {
+    } catch {
       setError('Failed to load bookings');
     }
-  };
+  }, [selectedRoom, selectedDate]);
 
-  const loadRecentBookings = async () => {
+  const loadRecentBookings = useCallback(async () => {
     try {
       const recent = await bookingApi.getRecentBookings(5);
       setRecentBookings(recent);
-    } catch (err) {
-      console.error('Failed to load recent bookings:', err);
+    } catch {
+      console.error('Failed to load recent bookings');
+    }
+  }, []);
+  
+  const handleBookingSubmit = async (formData: { title: string; pic: string }) => {
+    if (selectedSlots.length === 0) return;
+
+    try {
+      await bookingApi.createBooking({
+        room_id: selectedRoom,
+        date: selectedDate,
+        start_time: selectedSlots[0],
+        duration: 1, // Always 1 (30 minutes) since we're using fixed duration
+        ...formData
+      });
+      
+      setSelectedSlots([]);
+      await Promise.all([loadBookings(), loadRecentBookings()]);
+      setError('');
+    } catch {
+      setError('Failed to create booking');
     }
   };
+
+  useEffect(() => {
+    loadBookings();
+    loadRecentBookings();
+    setSelectedSlots([]);
+  }, [selectedRoom, selectedDate, loadBookings, loadRecentBookings]);
 
   const handleBookingSubmit = async (formData: { title: string; pic: string }) => {
     if (selectedSlots.length === 0) return;
@@ -61,26 +80,18 @@ export function RoomBookingApp() {
       setSelectedSlots([]);
       await Promise.all([loadBookings(), loadRecentBookings()]);
       setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create booking');
+    } catch {
+      setError('Failed to create booking');
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-7xl mx-auto p-6">
-        <div className="flex items-center gap-4 mb-8">
-          <Image 
-            src="/logo.png" 
-            alt="Company Logo" 
-            width={50} 
-            height={50}
-            className="object-contain"
-          />
-          <h1 className="text-3xl font-bold text-slate-800">Meeting Room Booking</h1>
-        </div>
+        <h1 className="text-3xl font-bold mb-8 text-slate-800">Meeting Room Booking</h1>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column - Booking Form and Room Selection */}
           <div>
             <BookingForm
               selectedSlots={selectedSlots}
@@ -93,7 +104,9 @@ export function RoomBookingApp() {
             />
           </div>
 
+          {/* Right Column - Booking Grid and Recent Bookings */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Booking Grid */}
             <RoomBookingCard
               roomId={selectedRoom}
               bookings={bookings}
@@ -101,12 +114,14 @@ export function RoomBookingApp() {
               onSlotsChange={setSelectedSlots}
             />
 
+            {/* Error Message */}
             {error && (
               <div className="p-4 text-sm text-red-700 bg-red-50 rounded-lg">
                 {error}
               </div>
             )}
 
+            {/* Recent Bookings */}
             <CurrentBookings 
               bookings={recentBookings} 
               selectedDate={selectedDate}
@@ -115,7 +130,7 @@ export function RoomBookingApp() {
                   await bookingApi.deleteBooking(id);
                   await Promise.all([loadBookings(), loadRecentBookings()]);
                   setError('');
-                } catch (err) {
+                } catch {
                   setError('Failed to delete booking');
                 }
               }} 

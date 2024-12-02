@@ -10,6 +10,19 @@ const ROOMS = {
   'meeting-room-3': { name: 'Meeting Room 3', startHour: 7, endHour: 19 },
 } as const;
 
+// Helper function to parse time string to minutes
+const timeToMinutes = (time: string): number => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+// Helper function to convert minutes to time string
+const minutesToTime = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+};
+
 const generateTimeSlots = (startHour: number, endHour: number) => {
   const slots = [];
   for (let hour = startHour; hour < endHour; hour++) {
@@ -31,40 +44,57 @@ export function RoomBookingCard({ roomId, bookings, selectedSlots, onSlotsChange
   const timeSlots = generateTimeSlots(room.startHour, room.endHour);
 
   const isSlotBooked = (time: string) => {
-    return bookings.some(booking => 
-      time >= booking.start_time && time < booking.end_time
-    );
+    const timeInMinutes = timeToMinutes(time);
+    return bookings.some(booking => {
+      const bookingStart = timeToMinutes(booking.start_time);
+      const bookingEnd = timeToMinutes(booking.end_time);
+      return timeInMinutes >= bookingStart && timeInMinutes < bookingEnd;
+    });
+  };
+
+  const getEndTime = (startTime: string): string => {
+    const startMinutes = timeToMinutes(startTime);
+    return minutesToTime(startMinutes + 30);
   };
 
   const handleSlotClick = (time: string) => {
-    if (isSlotBooked(time)) return;
-
-    const timeIndex = timeSlots.indexOf(time);
     if (selectedSlots.includes(time)) {
-      // Remove this slot and any subsequent contiguous selected slots
-      const newSlots = selectedSlots.filter(slot => 
-        timeSlots.indexOf(slot) < timeIndex
-      );
-      onSlotsChange(newSlots);
+      onSlotsChange([]);
     } else {
-      // Add this slot if it's adjacent to existing selection or first selection
-      const lastSelectedIndex = Math.max(...selectedSlots.map(slot => timeSlots.indexOf(slot)), -1);
-      if (selectedSlots.length === 0 || timeIndex === lastSelectedIndex + 1) {
-        onSlotsChange([...selectedSlots, time]);
+      const endTime = getEndTime(time);
+      // Check if any slot in the range is booked
+      const timeInMinutes = timeToMinutes(time);
+      const endTimeInMinutes = timeToMinutes(endTime);
+      const hasConflict = bookings.some(booking => {
+        const bookingStart = timeToMinutes(booking.start_time);
+        const bookingEnd = timeToMinutes(booking.end_time);
+        return (timeInMinutes < bookingEnd && endTimeInMinutes > bookingStart);
+      });
+
+      if (!hasConflict) {
+        onSlotsChange([time]);
       }
     }
+  };
+
+  const isSlotSelected = (time: string): boolean => {
+    if (selectedSlots.length === 0) return false;
+    const startTime = selectedSlots[0];
+    const endTime = getEndTime(startTime);
+    const timeInMinutes = timeToMinutes(time);
+    return timeInMinutes >= timeToMinutes(startTime) && timeInMinutes < timeToMinutes(endTime);
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl text-slate-800">{room.name}</CardTitle>
+        <CardTitle>{room.name}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-4 gap-2">
           {timeSlots.map((time) => {
             const isBooked = isSlotBooked(time);
-            const isSelected = selectedSlots.includes(time);
+            const isSelected = isSlotSelected(time);
             
             return (
               <Button
@@ -75,9 +105,9 @@ export function RoomBookingCard({ roomId, bookings, selectedSlots, onSlotsChange
                     ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                     : isSelected
                     ? "bg-blue-500 hover:bg-blue-600 text-white"
-                    : "hover:bg-blue-50 text-slate-900"
+                    : "hover:bg-blue-50"
                 }`}
-                onClick={() => handleSlotClick(time)}
+                onClick={() => !isBooked && handleSlotClick(time)}
                 disabled={isBooked}
               >
                 {time}
@@ -85,6 +115,16 @@ export function RoomBookingCard({ roomId, bookings, selectedSlots, onSlotsChange
             );
           })}
         </div>
+        {selectedSlots.length > 0 && (
+          <div className="mt-4 p-3 bg-blue-50 rounded-md">
+            <p className="text-sm font-medium text-blue-800">
+              Selected Time: {selectedSlots[0]} - {getEndTime(selectedSlots[0])}
+            </p>
+            <p className="text-sm text-blue-600">
+              Duration: 30 minutes
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
